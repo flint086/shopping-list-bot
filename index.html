@@ -477,7 +477,15 @@
                 return;
             }
             
-            // Форматируем данные для отправки
+            // Показываем данные для копирования
+            showDataModal();
+        }
+
+        // Показать модальное окно с данными для копирования
+        function showDataModal() {
+            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+            
+            // Форматируем ТОЛЬКО JSON данные (без лишнего текста)
             const syncData = {
                 action: 'sync_from_webapp',
                 items: items,
@@ -485,20 +493,8 @@
                 user_id: tg.initDataUnsafe.user.id
             };
             
-            // Создаем текстовое сообщение для отправки
-            const messageText = "🛒 СИНХРОНИЗАЦИЯ ДАННЫХ\n\n" +
-                               "Пожалуйста, скопируйте этот код и отправьте боту:\n\n" +
-                               "```json\n" +
-                               JSON.stringify(syncData, null, 2) +
-                               "\n```\n\n" +
-                               "Или используйте команду /process_data в боте";
+            const jsonText = JSON.stringify(syncData, null, 2);
             
-            // Показываем данные для копирования
-            showDataModal(messageText);
-        }
-
-        // Показать модальное окно с данными для копирования
-        function showDataModal(message) {
             const modal = document.createElement('div');
             modal.style.cssText = `
                 position: fixed;
@@ -517,12 +513,15 @@
             modal.innerHTML = `
                 <div style="background: white; padding: 20px; border-radius: 15px; max-width: 500px; max-height: 80vh; overflow-y: auto;">
                     <h3 style="margin-bottom: 15px; color: #4CAF50;">📤 Отправка данных боту</h3>
-                    <div style="background: #f5f5f5; padding: 15px; border-radius: 10px; margin-bottom: 15px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto;">
-                        ${message}
+                    <p style="margin-bottom: 10px; font-size: 14px; color: #666;">
+                        Скопируйте этот код и отправьте боту:
+                    </p>
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 10px; margin-bottom: 15px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                        ${jsonText}
                     </div>
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
                         <button onclick="closeDataModal()" style="padding: 10px 20px; background: #f0f0f0; border: none; border-radius: 8px; cursor: pointer;">Закрыть</button>
-                        <button onclick="copyToClipboard()" style="padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer;">📋 Копировать</button>
+                        <button onclick="copyToClipboard('${btoa(unescape(encodeURIComponent(jsonText)))}')" style="padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer;">📋 Копировать код</button>
                     </div>
                 </div>
             `;
@@ -538,15 +537,28 @@
         }
 
         // Копировать в буфер обмена
-        function copyToClipboard() {
-            const modal = document.getElementById('dataModal');
-            const text = modal.querySelector('div').textContent;
-            
-            navigator.clipboard.writeText(text).then(() => {
-                alert('✅ Данные скопированы в буфер обмена!');
-            }).catch(err => {
-                alert('❌ Ошибка копирования: ' + err);
-            });
+        function copyToClipboard(encodedJson) {
+            try {
+                const jsonText = decodeURIComponent(escape(atob(encodedJson)));
+                
+                navigator.clipboard.writeText(jsonText).then(() => {
+                    alert('✅ Код скопирован! Теперь отправьте его боту.');
+                    closeDataModal();
+                }).catch(err => {
+                    // Fallback для старых браузеров
+                    const textArea = document.createElement('textarea');
+                    textArea.value = jsonText;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    alert('✅ Код скопирован! Теперь отправьте его боту.');
+                    closeDataModal();
+                });
+            } catch (error) {
+                console.error('Copy error:', error);
+                alert('❌ Ошибка копирования');
+            }
         }
 
         // Показать модальное окно для импорта
