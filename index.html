@@ -255,6 +255,20 @@
             font-size: 12px;
             color: #666;
         }
+
+        .debug-btn {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 9999;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -304,6 +318,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Кнопка отладки -->
+    <button class="debug-btn" onclick="quickDebug()">🚨 Проверка</button>
 
     <script>
         // Telegram Web App initialization
@@ -452,21 +469,48 @@
 
         // Sync with bot - отправляем данные боту
         function syncWithBot() {
+            console.log('=== STARTING SYNC ===');
+            
             const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+            console.log('Items to send:', items);
+            
+            // Проверяем что есть товары для отправки
+            if (items.length === 0) {
+                alert('❌ Список покупок пуст! Добавьте товары перед отправкой.');
+                return;
+            }
             
             // Форматируем данные для отправки
             const syncData = {
                 action: 'sync_from_webapp',
                 items: items,
                 timestamp: new Date().toISOString(),
-                user_id: currentUser?.id
+                user_id: tg.initDataUnsafe.user.id
             };
             
-            // Отправляем данные боту через Telegram Web App
-            tg.sendData(JSON.stringify(syncData));
+            console.log('Data to send:', syncData);
             
-            // Показываем сообщение об успехе
-            showSyncMessage('✅ Данные отправлены боту! Проверьте чат с ботом.');
+            try {
+                // Проверяем функцию sendData
+                if (typeof tg.sendData !== 'function') {
+                    alert('❌ Ошибка: tg.sendData не является функцией');
+                    return;
+                }
+                
+                console.log('Calling tg.sendData...');
+                
+                // Отправляем данные боту через Telegram Web App
+                tg.sendData(JSON.stringify(syncData));
+                
+                console.log('✅ tg.sendData вызвана успешно');
+                
+                // Показываем подтверждение
+                alert(`✅ Данные отправлены боту!\n\nОтправлено товаров: ${items.length}\nПроверьте чат с ботом.`);
+                
+            } catch (error) {
+                console.error('❌ Error in tg.sendData:', error);
+                alert(`❌ Ошибка при отправке:\n${error.message}`);
+            }
         }
 
         // Показать модальное окно для импорта
@@ -576,6 +620,11 @@
             }, 4000);
         }
 
+        // Простая проверка
+        function quickDebug() {
+            alert(`Проверка:\n• Telegram WebApp: ${typeof tg}\n• Пользователь: ${tg.initDataUnsafe?.user?.first_name || 'нет'}\n• ID: ${tg.initDataUnsafe?.user?.id || 'нет'}`);
+        }
+
         // Handle Enter key in input
         document.getElementById('itemInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -594,19 +643,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadItems();
         });
-		
-		        // Простая проверка
-        function quickDebug() {
-            alert(`Проверка:\n• Telegram WebApp: ${typeof tg}\n• Пользователь: ${tg.initDataUnsafe?.user?.first_name || 'нет'}\n• ID: ${tg.initDataUnsafe?.user?.id || 'нет'}`);
-        }
-
-        // Добавляем кнопку быстрой проверки
-        const quickBtn = document.createElement('button');
-        quickBtn.textContent = '🚨 Быстрая проверка';
-        quickBtn.style.cssText = 'position: fixed; bottom: 50px; right: 10px; background: #2196F3; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; z-index: 9999; font-size: 12px;';
-        quickBtn.onclick = quickDebug;
-        document.body.appendChild(quickBtn);
-		
     </script>
 </body>
 </html>
