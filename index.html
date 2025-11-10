@@ -594,6 +594,19 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadItems();
         });
+		
+		        // Простая проверка
+        function quickDebug() {
+            alert(`Проверка:\n• Telegram WebApp: ${typeof tg}\n• Пользователь: ${tg.initDataUnsafe?.user?.first_name || 'нет'}\n• ID: ${tg.initDataUnsafe?.user?.id || 'нет'}`);
+        }
+
+        // Добавляем кнопку быстрой проверки
+        const quickBtn = document.createElement('button');
+        quickBtn.textContent = '🚨 Быстрая проверка';
+        quickBtn.style.cssText = 'position: fixed; bottom: 50px; right: 10px; background: #2196F3; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; z-index: 9999; font-size: 12px;';
+        quickBtn.onclick = quickDebug;
+        document.body.appendChild(quickBtn);
+		
     </script>
 </body>
 </html>
