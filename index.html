@@ -469,10 +469,7 @@
 
         // Sync with bot - отправляем данные боту
         function syncWithBot() {
-            console.log('=== STARTING SYNC ===');
-            
             const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-            console.log('Items to send:', items);
             
             // Проверяем что есть товары для отправки
             if (items.length === 0) {
@@ -488,29 +485,68 @@
                 user_id: tg.initDataUnsafe.user.id
             };
             
-            console.log('Data to send:', syncData);
+            // Создаем текстовое сообщение для отправки
+            const messageText = "🛒 СИНХРОНИЗАЦИЯ ДАННЫХ\n\n" +
+                               "Пожалуйста, скопируйте этот код и отправьте боту:\n\n" +
+                               "```json\n" +
+                               JSON.stringify(syncData, null, 2) +
+                               "\n```\n\n" +
+                               "Или используйте команду /process_data в боте";
             
-            try {
-                // Проверяем функцию sendData
-                if (typeof tg.sendData !== 'function') {
-                    alert('❌ Ошибка: tg.sendData не является функцией');
-                    return;
-                }
-                
-                console.log('Calling tg.sendData...');
-                
-                // Отправляем данные боту через Telegram Web App
-                tg.sendData(JSON.stringify(syncData));
-                
-                console.log('✅ tg.sendData вызвана успешно');
-                
-                // Показываем подтверждение
-                alert(`✅ Данные отправлены боту!\n\nОтправлено товаров: ${items.length}\nПроверьте чат с ботом.`);
-                
-            } catch (error) {
-                console.error('❌ Error in tg.sendData:', error);
-                alert(`❌ Ошибка при отправке:\n${error.message}`);
-            }
+            // Показываем данные для копирования
+            showDataModal(messageText);
+        }
+
+        // Показать модальное окно с данными для копирования
+        function showDataModal(message) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.8);
+                z-index: 10000;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 20px;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: white; padding: 20px; border-radius: 15px; max-width: 500px; max-height: 80vh; overflow-y: auto;">
+                    <h3 style="margin-bottom: 15px; color: #4CAF50;">📤 Отправка данных боту</h3>
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 10px; margin-bottom: 15px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto;">
+                        ${message}
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button onclick="closeDataModal()" style="padding: 10px 20px; background: #f0f0f0; border: none; border-radius: 8px; cursor: pointer;">Закрыть</button>
+                        <button onclick="copyToClipboard()" style="padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer;">📋 Копировать</button>
+                    </div>
+                </div>
+            `;
+            
+            modal.id = 'dataModal';
+            document.body.appendChild(modal);
+        }
+
+        // Закрыть модальное окно
+        function closeDataModal() {
+            const modal = document.getElementById('dataModal');
+            if (modal) modal.remove();
+        }
+
+        // Копировать в буфер обмена
+        function copyToClipboard() {
+            const modal = document.getElementById('dataModal');
+            const text = modal.querySelector('div').textContent;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ Данные скопированы в буфер обмена!');
+            }).catch(err => {
+                alert('❌ Ошибка копирования: ' + err);
+            });
         }
 
         // Показать модальное окно для импорта
