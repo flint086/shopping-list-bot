@@ -1,363 +1,244 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Список покупок</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            overflow: hidden;
-        }
-        
-        .header {
-            background: #4CAF50;
-            color: white;
-            padding: 20px;
-            text-align: center;
-        }
-        
-        .header h1 {
-            font-size: 24px;
-            margin-bottom: 5px;
-        }
-        
-        .add-item {
-            padding: 20px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .input-group {
-            display: flex;
-            gap: 10px;
-        }
-        
-        input {
-            flex: 1;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 16px;
-            outline: none;
-            transition: border-color 0.3s;
-        }
-        
-        input:focus {
-            border-color: #4CAF50;
-        }
-        
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background 0.3s;
-        }
-        
-        button:hover {
-            background: #45a049;
-        }
-        
-        .items-list {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        
-        .item {
-            display: flex;
-            align-items: center;
-            padding: 15px 20px;
-            border-bottom: 1px solid #f0f0f0;
-            animation: slideIn 0.3s ease;
-        }
-        
-        .item:last-child {
-            border-bottom: none;
-        }
-        
-        .item-content {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .checkbox {
-            width: 20px;
-            height: 20px;
-            border: 2px solid #ddd;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s;
-        }
-        
-        .checkbox.checked {
-            background: #4CAF50;
-            border-color: #4CAF50;
-            color: white;
-        }
-        
-        .item-text {
-            flex: 1;
-            font-size: 16px;
-        }
-        
-        .item-text.completed {
-            text-decoration: line-through;
-            color: #888;
-        }
-        
-        .delete-btn {
-            background: #ff4444;
-            color: white;
-            border: none;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #888;
-        }
-        
-        .section-title {
-            padding: 15px 20px;
-            background: #f8f9fa;
-            font-weight: bold;
-            color: #666;
-            border-bottom: 1px solid #eee;
-        }
-        
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🛒 Список покупок</h1>
-            <div id="userInfo"></div>
-        </div>
-        
-        <div class="add-item">
-            <div class="input-group">
-                <input type="text" id="itemInput" placeholder="Добавить товар..." maxlength="100">
-                <button onclick="addItem()">➕</button>
-            </div>
-            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
-                Можно добавлять несколько товаров через запятую
-            </div>
-        </div>
-        
-        <div id="activeSection" style="display: none;">
-            <div class="section-title">📋 Товары для покупки</div>
-            <div class="items-list" id="activeItems"></div>
-        </div>
-        
-        <div id="completedSection" style="display: none;">
-            <div class="section-title">✅ Купленные товары</div>
-            <div class="items-list" id="completedItems"></div>
-        </div>
-        
-        <div id="emptyState" class="empty-state">
-            📝 Список покупок пуст<br>
-            <small>Добавьте первый товар</small>
-        </div>
-    </div>
+// Telegram Web App initialization
+let tg = window.Telegram.WebApp;
+let currentUser = null;
 
-    <script>
-        let tg = window.Telegram.WebApp;
-        let user = tg.initDataUnsafe.user;
-        
-        // Инициализация
-        tg.expand();
-        tg.MainButton.setText("Закрыть").onClick(() => tg.close());
-        tg.MainButton.show();
-        
-        // Показываем информацию о пользователе
-        if (user) {
-            document.getElementById('userInfo').textContent = `Привет, ${user.first_name || 'друг'}!`;
+// Initialize Telegram Web App
+tg.expand();
+tg.MainButton.setText("Синхронизировать с ботом").onClick(syncWithBot);
+tg.MainButton.show();
+
+// Show user info if available
+if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+    currentUser = tg.initDataUnsafe.user;
+    document.getElementById('userInfo').textContent = `Привет, ${currentUser.first_name || 'друг'}!`;
+}
+
+// Load items from localStorage
+function loadItems() {
+    try {
+        const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+        renderItems(items);
+    } catch (error) {
+        console.error('Error loading items:', error);
+    }
+}
+
+// Add new item
+function addItem() {
+    const input = document.getElementById('itemInput');
+    const text = input.value.trim();
+    
+    if (!text) return;
+    
+    // Handle multiple items separated by commas
+    const itemsToAdd = text.split(',').map(item => item.trim()).filter(item => item);
+    
+    itemsToAdd.forEach(itemText => {
+        if (itemText) {
+            saveItem(itemText);
         }
+    });
+    
+    input.value = '';
+    loadItems();
+}
+
+// Save item to localStorage
+function saveItem(text) {
+    try {
+        const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
         
-        // Загрузка данных
-        async function loadItems() {
-            try {
-                // В реальном приложении здесь будет запрос к вашему API
-                // Для демо используем localStorage
-                let items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                renderItems(items);
-            } catch (error) {
-                console.error('Ошибка загрузки:', error);
-            }
-        }
-        
-        // Добавление товара
-        async function addItem() {
-            const input = document.getElementById('itemInput');
-            const text = input.value.trim();
-            
-            if (!text) return;
-            
-            // Обработка нескольких товаров через запятую
-            const itemsToAdd = text.split(',').map(item => item.trim()).filter(item => item);
-            
-            for (const itemText of itemsToAdd) {
-                if (itemText) {
-                    await saveItem(itemText);
-                }
-            }
-            
-            input.value = '';
-            await loadItems();
-        }
-        
-        // Сохранение товара
-        async function saveItem(text) {
-            try {
-                // В реальном приложении: запрос к вашему боту через API
-                let items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                
-                // Проверка на дубликаты
-                if (!items.find(item => item.text.toLowerCase() === text.toLowerCase())) {
-                    items.push({
-                        id: Date.now(),
-                        text: text,
-                        completed: false,
-                        createdAt: new Date().toISOString()
-                    });
-                    
-                    localStorage.setItem('shopping_items', JSON.stringify(items));
-                    return true;
-                }
-                return false;
-            } catch (error) {
-                console.error('Ошибка сохранения:', error);
-                return false;
-            }
-        }
-        
-        // Отметка товара
-        async function toggleItem(id) {
-            try {
-                let items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                const item = items.find(item => item.id === id);
-                
-                if (item) {
-                    item.completed = !item.completed;
-                    localStorage.setItem('shopping_items', JSON.stringify(items));
-                    await loadItems();
-                }
-            } catch (error) {
-                console.error('Ошибка обновления:', error);
-            }
-        }
-        
-        // Удаление товара
-        async function deleteItem(id) {
-            try {
-                let items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                items = items.filter(item => item.id !== id);
-                localStorage.setItem('shopping_items', JSON.stringify(items));
-                await loadItems();
-            } catch (error) {
-                console.error('Ошибка удаления:', error);
-            }
-        }
-        
-        // Отрисовка товаров
-        function renderItems(items) {
-            const activeItems = items.filter(item => !item.completed);
-            const completedItems = items.filter(item => item.completed);
-            
-            // Активные товары
-            const activeContainer = document.getElementById('activeItems');
-            activeContainer.innerHTML = '';
-            
-            activeItems.forEach(item => {
-                activeContainer.appendChild(createItemElement(item));
+        // Check for duplicates
+        if (!items.find(item => item.text.toLowerCase() === text.toLowerCase())) {
+            items.push({
+                id: Date.now() + Math.random(),
+                text: text,
+                completed: false,
+                createdAt: new Date().toISOString()
             });
             
-            // Завершенные товары
-            const completedContainer = document.getElementById('completedItems');
-            completedContainer.innerHTML = '';
-            
-            completedItems.forEach(item => {
-                completedContainer.appendChild(createItemElement(item));
-            });
-            
-            // Показываем/скрываем секции
-            document.getElementById('activeSection').style.display = activeItems.length ? 'block' : 'none';
-            document.getElementById('completedSection').style.display = completedItems.length ? 'block' : 'none';
-            document.getElementById('emptyState').style.display = items.length ? 'none' : 'block';
+            localStorage.setItem('shopping_items', JSON.stringify(items));
+            return true;
         }
+        return false;
+    } catch (error) {
+        console.error('Error saving item:', error);
+        return false;
+    }
+}
+
+// Toggle item completion
+function toggleItem(id) {
+    try {
+        const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+        const item = items.find(item => item.id === id);
         
-        // Создание элемента товара
-        function createItemElement(item) {
-            const div = document.createElement('div');
-            div.className = 'item';
-            
-            div.innerHTML = `
-                <div class="item-content">
-                    <div class="checkbox ${item.completed ? 'checked' : ''}" onclick="toggleItem(${item.id})">
-                        ${item.completed ? '✓' : ''}
-                    </div>
-                    <div class="item-text ${item.completed ? 'completed' : ''}">
-                        ${item.text}
-                    </div>
-                </div>
-                <button class="delete-btn" onclick="deleteItem(${item.id})">×</button>
-            `;
-            
-            return div;
+        if (item) {
+            item.completed = !item.completed;
+            localStorage.setItem('shopping_items', JSON.stringify(items));
+            loadItems();
         }
-        
-        // Обработка Enter в поле ввода
-        document.getElementById('itemInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                addItem();
-            }
-        });
-        
-        // Загрузка при старте
+    } catch (error) {
+        console.error('Error toggling item:', error);
+    }
+}
+
+// Delete item
+function deleteItem(id) {
+    try {
+        let items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+        items = items.filter(item => item.id !== id);
+        localStorage.setItem('shopping_items', JSON.stringify(items));
         loadItems();
-    </script>
-</body>
-</html>
+    } catch (error) {
+        console.error('Error deleting item:', error);
+    }
+}
+
+// Render items to the page
+function renderItems(items) {
+    const activeItems = items.filter(item => !item.completed);
+    const completedItems = items.filter(item => item.completed);
+    
+    // Active items
+    const activeContainer = document.getElementById('activeItems');
+    activeContainer.innerHTML = '';
+    activeItems.forEach(item => {
+        activeContainer.appendChild(createItemElement(item));
+    });
+    
+    // Completed items
+    const completedContainer = document.getElementById('completedItems');
+    completedContainer.innerHTML = '';
+    completedItems.forEach(item => {
+        completedContainer.appendChild(createItemElement(item));
+    });
+    
+    // Show/hide sections
+    document.getElementById('activeSection').style.display = activeItems.length ? 'block' : 'none';
+    document.getElementById('completedSection').style.display = completedItems.length ? 'block' : 'none';
+    document.getElementById('emptyState').style.display = items.length ? 'none' : 'block';
+}
+
+// Create item HTML element
+function createItemElement(item) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    
+    div.innerHTML = `
+        <div class="item-content">
+            <div class="checkbox ${item.completed ? 'checked' : ''}" onclick="toggleItem(${item.id})">
+                ${item.completed ? '✓' : ''}
+            </div>
+            <div class="item-text ${item.completed ? 'completed' : ''}">
+                ${item.text}
+            </div>
+        </div>
+        <button class="delete-btn" onclick="deleteItem(${item.id})">×</button>
+    `;
+    
+    return div;
+}
+
+// 🔄 SYNCHRONIZATION FUNCTIONS
+
+// Sync with bot - отправляем данные боту
+function syncWithBot() {
+    const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+    
+    // Форматируем данные для отправки
+    const syncData = {
+        action: 'sync_from_webapp',
+        items: items,
+        timestamp: new Date().toISOString(),
+        user_id: currentUser?.id
+    };
+    
+    // Отправляем данные боту через Telegram Web App
+    tg.sendData(JSON.stringify(syncData));
+    
+    // Показываем сообщение об успехе
+    showSyncMessage('✅ Данные отправлены боту! Проверьте чат с ботом.');
+}
+
+// Load from bot - запрашиваем данные у бота
+function loadFromBot() {
+    // Показываем инструкцию
+    showSyncMessage('📥 Отправьте боту команду /sync_to_webapp чтобы загрузить данные в приложение');
+}
+
+// Show sync message
+function showSyncMessage(message) {
+    const messageDiv = document.createElement('div');
+    messageDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #4CAF50;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 10px;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        max-width: 80%;
+        text-align: center;
+    `;
+    messageDiv.textContent = message;
+    
+    document.body.appendChild(messageDiv);
+    
+    setTimeout(() => {
+        messageDiv.remove();
+    }, 4000);
+}
+
+// Handle Enter key in input
+document.getElementById('itemInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        addItem();
+    }
+});
+
+// Add sync buttons to the interface
+function addSyncButtons() {
+    const header = document.querySelector('.header');
+    
+    const syncButtons = document.createElement('div');
+    syncButtons.style.cssText = `
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+        justify-content: center;
+    `;
+    
+    syncButtons.innerHTML = `
+        <button onclick="syncWithBot()" style="
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+        ">📤 Отправить боту</button>
+        
+        <button onclick="loadFromBot()" style="
+            background: #FF9800;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+        ">📥 Загрузить от бота</button>
+    `;
+    
+    header.appendChild(syncButtons);
+}
+
+// Load items when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadItems();
+    addSyncButtons();
+});
