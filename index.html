@@ -179,6 +179,65 @@
             background: #FF9800;
         }
         
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal textarea {
+            width: 100%;
+            height: 200px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            resize: vertical;
+            margin: 10px 0;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .modal-btn.primary {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .modal-btn.secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
         @keyframes slideIn {
             from {
                 opacity: 0;
@@ -205,7 +264,7 @@
             <div id="userInfo"></div>
             <div class="sync-buttons">
                 <button class="sync-btn" onclick="syncWithBot()">📤 Отправить боту</button>
-                <button class="sync-btn load" onclick="loadFromBot()">📥 Загрузить от бота</button>
+                <button class="sync-btn load" onclick="showImportModal()">📥 Загрузить от бота</button>
             </div>
         </div>
         
@@ -230,6 +289,19 @@
         <div id="emptyState" class="empty-state">
             📝 Список покупок пуст<br>
             <small>Добавьте первый товар</small>
+        </div>
+    </div>
+
+    <!-- Модальное окно для импорта -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <h3>📥 Импорт данных от бота</h3>
+            <p>Вставьте JSON код, полученный от бота:</p>
+            <textarea id="importData" placeholder='Вставьте сюда JSON код...&#10;Пример:&#10;[&#10;  {&#10;    "id": 1,&#10;    "text": "Молоко",&#10;    "completed": false&#10;  }&#10;]'></textarea>
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" onclick="hideImportModal()">Отмена</button>
+                <button class="modal-btn primary" onclick="importFromBot()">Импортировать</button>
+            </div>
         </div>
     </div>
 
@@ -397,10 +469,83 @@
             showSyncMessage('✅ Данные отправлены боту! Проверьте чат с ботом.');
         }
 
-        // Load from bot - запрашиваем данные у бота
-        function loadFromBot() {
-            // Показываем инструкцию
-            showSyncMessage('📥 Отправьте боту команду /sync_to_webapp чтобы загрузить данные в приложение');
+        // Показать модальное окно для импорта
+        function showImportModal() {
+            document.getElementById('importModal').style.display = 'flex';
+            document.getElementById('importData').focus();
+        }
+
+        // Скрыть модальное окно
+        function hideImportModal() {
+            document.getElementById('importModal').style.display = 'none';
+            document.getElementById('importData').value = '';
+        }
+
+        // Импорт данных от бота
+        function importFromBot() {
+            const importText = document.getElementById('importData').value.trim();
+            
+            if (!importText) {
+                showSyncMessage('❌ Введите JSON данные');
+                return;
+            }
+            
+            try {
+                const importedData = JSON.parse(importText);
+                
+                // Проверяем что это массив
+                if (!Array.isArray(importedData)) {
+                    throw new Error('Данные должны быть массивом');
+                }
+                
+                // Проверяем структуру данных
+                const validData = importedData.filter(item => 
+                    item && typeof item.text === 'string' && item.text.trim() !== ''
+                );
+                
+                if (validData.length === 0) {
+                    throw new Error('Нет валидных товаров для импорта');
+                }
+                
+                // Очищаем текущий список
+                localStorage.setItem('shopping_items', JSON.stringify([]));
+                
+                // Добавляем импортированные товары
+                let importedCount = 0;
+                let skippedCount = 0;
+                
+                validData.forEach(item => {
+                    if (saveItem(item.text)) {
+                        // Если товар был отмечен как выполненный в импорте
+                        if (item.completed) {
+                            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+                            const savedItem = items.find(saved => saved.text === item.text);
+                            if (savedItem) {
+                                savedItem.completed = true;
+                            }
+                            localStorage.setItem('shopping_items', JSON.stringify(items));
+                        }
+                        importedCount++;
+                    } else {
+                        skippedCount++;
+                    }
+                });
+                
+                // Перезагружаем список
+                loadItems();
+                hideImportModal();
+                
+                // Показываем результат
+                let message = `✅ Импортировано товаров: ${importedCount}`;
+                if (skippedCount > 0) {
+                    message += `\n⏭️ Пропущено (дубликаты): ${skippedCount}`;
+                }
+                showSyncMessage(message);
+                
+            } catch (error) {
+                console.error('Import error:', error);
+                showSyncMessage('❌ Ошибка импорта: неверный формат JSON');
+            }
         }
 
         // Show sync message
@@ -435,6 +580,13 @@
         document.getElementById('itemInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 addItem();
+            }
+        });
+
+        // Закрытие модального окна по клику вне его
+        document.getElementById('importModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                hideImportModal();
             }
         });
 
