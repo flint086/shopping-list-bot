@@ -79,6 +79,11 @@
             background: #45a049;
         }
         
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        
         .items-list {
             max-height: 400px;
             overflow-y: auto;
@@ -121,6 +126,11 @@
             color: white;
         }
         
+        .checkbox.loading {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
         .item-text {
             flex: 1;
             font-size: 16px;
@@ -144,6 +154,11 @@
             justify-content: center;
         }
         
+        .delete-btn:disabled {
+            background: #ff9999;
+            cursor: not-allowed;
+        }
+        
         .empty-state {
             text-align: center;
             padding: 40px 20px;
@@ -158,84 +173,26 @@
             border-bottom: 1px solid #eee;
         }
         
-        .sync-buttons {
-            display: flex;
-            gap: 10px;
+        .sync-info {
+            text-align: center;
             margin-top: 10px;
-            justify-content: center;
-        }
-        
-        .sync-btn {
-            background: #2196F3;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
             font-size: 12px;
+            color: rgba(255,255,255,0.8);
         }
         
-        .sync-btn.load {
-            background: #FF9800;
-        }
-        
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .modal-content {
-            background: white;
+        .loading {
+            text-align: center;
             padding: 20px;
-            border-radius: 15px;
-            width: 90%;
-            max-width: 400px;
-            max-height: 80vh;
-            overflow-y: auto;
+            color: #666;
         }
         
-        .modal textarea {
-            width: 100%;
-            height: 200px;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-family: monospace;
-            font-size: 14px;
-            resize: vertical;
-            margin: 10px 0;
-        }
-        
-        .modal-buttons {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-        }
-        
-        .modal-btn {
-            padding: 10px 20px;
-            border: none;
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px 15px;
+            margin: 10px 20px;
             border-radius: 8px;
-            cursor: pointer;
             font-size: 14px;
-        }
-        
-        .modal-btn.primary {
-            background: #4CAF50;
-            color: white;
-        }
-        
-        .modal-btn.secondary {
-            background: #f0f0f0;
-            color: #333;
         }
         
         @keyframes slideIn {
@@ -256,38 +213,54 @@
             color: #666;
         }
 
-        .debug-btn {
+        .connection-status {
             position: fixed;
-            bottom: 10px;
+            top: 10px;
             right: 10px;
-            background: #2196F3;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 5px;
-            cursor: pointer;
-            z-index: 9999;
+            padding: 5px 10px;
+            border-radius: 15px;
             font-size: 12px;
+            z-index: 1000;
+        }
+        
+        .connection-status.connected {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .connection-status.disconnected {
+            background: #f44336;
+            color: white;
+        }
+        
+        .connection-status.connecting {
+            background: #FF9800;
+            color: white;
         }
     </style>
 </head>
 <body>
+    <div class="connection-status connecting" id="connectionStatus">🔄 Подключение...</div>
+    
     <div class="container">
         <div class="header">
             <h1>🛒 Список покупок</h1>
             <div id="userInfo"></div>
-            <div class="sync-buttons">
-                <button class="sync-btn" onclick="syncWithBot()">📤 Отправить боту</button>
-                <button class="sync-btn load" onclick="showImportModal()">📥 Загрузить от бота</button>
-            </div>
+            <div class="sync-info" id="syncInfo">Автоматическая синхронизация</div>
         </div>
         
         <div class="add-item">
             <div class="input-group">
                 <input type="text" id="itemInput" placeholder="Добавить товар..." maxlength="100">
-                <button onclick="addItem()">➕</button>
+                <button onclick="addItem()" id="addButton">➕</button>
             </div>
-            <div class="hint">Можно добавлять несколько товаров через запятую</div>
+            <div class="hint">Нажмите Enter или кнопку для добавления</div>
+        </div>
+        
+        <div id="errorContainer" style="display: none;"></div>
+        
+        <div id="loadingState" class="loading">
+            🔄 Загрузка списка...
         </div>
         
         <div id="activeSection" style="display: none;">
@@ -300,159 +273,284 @@
             <div class="items-list" id="completedItems"></div>
         </div>
         
-        <div id="emptyState" class="empty-state">
+        <div id="emptyState" class="empty-state" style="display: none;">
             📝 Список покупок пуст<br>
             <small>Добавьте первый товар</small>
         </div>
     </div>
 
-    <!-- Модальное окно для импорта -->
-    <div id="importModal" class="modal">
-        <div class="modal-content">
-            <h3>📥 Импорт данных от бота</h3>
-            <p>Вставьте JSON код, полученный от бота:</p>
-            <textarea id="importData" placeholder='Вставьте сюда JSON код...&#10;Пример:&#10;[&#10;  {&#10;    "id": 1,&#10;    "text": "Молоко",&#10;    "completed": false&#10;  }&#10;]'></textarea>
-            <div class="modal-buttons">
-                <button class="modal-btn secondary" onclick="hideImportModal()">Отмена</button>
-                <button class="modal-btn primary" onclick="importFromBot()">Импортировать</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Кнопка отладки -->
-    <button class="debug-btn" onclick="quickDebug()">🚨 Проверка</button>
-
     <script>
-        // Telegram Web App initialization
+        // === КОНФИГУРАЦИЯ ===
+        const API_BASE_URL = 'http://flint86.pythonanywhere.com:5000/api';
+        // ЗАМЕНИ 'ваш-аккаунт' на твой логин PythonAnywhere!
+        
+        // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
         let tg = window.Telegram.WebApp;
         let currentUser = null;
+        let items = [];
+        let isOnline = false;
 
-        // Initialize Telegram Web App
+        // === ИНИЦИАЛИЗАЦИЯ ===
         tg.expand();
-        tg.MainButton.setText("Синхронизировать с ботом").onClick(syncWithBot);
-        tg.MainButton.show();
+        tg.enableClosingConfirmation();
 
-        // Show user info if available
+        // Показываем информацию о пользователе
         if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
             currentUser = tg.initDataUnsafe.user;
             document.getElementById('userInfo').textContent = `Привет, ${currentUser.first_name || 'друг'}!`;
+        } else {
+            // Для тестирования без Telegram
+            currentUser = { id: 123456789, first_name: 'Тестовый' };
+            document.getElementById('userInfo').textContent = 'Режим тестирования';
         }
 
-        // Load items from localStorage
-        function loadItems() {
+        // === API ФУНКЦИИ ===
+        
+        // Проверка подключения к API
+        async function checkConnection() {
             try {
-                const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                renderItems(items);
+                const response = await fetch(`${API_BASE_URL}/items/${currentUser.id}`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                return response.ok;
             } catch (error) {
-                console.error('Error loading items:', error);
+                return false;
             }
         }
 
-        // Add new item
-        function addItem() {
+        // Загрузить список с сервера
+        async function loadItems() {
+            showLoading(true);
+            updateConnectionStatus('connecting');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/items/${currentUser.id}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Ошибка сервера: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    items = data.items || [];
+                    renderItems();
+                    updateConnectionStatus('connected');
+                    showError(null);
+                } else {
+                    throw new Error(data.error || 'Неизвестная ошибка');
+                }
+                
+            } catch (error) {
+                console.error('Ошибка загрузки:', error);
+                updateConnectionStatus('disconnected');
+                showError(`❌ Не удалось загрузить список: ${error.message}`);
+                items = [];
+                renderItems();
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Добавить товар
+        async function addItem() {
             const input = document.getElementById('itemInput');
+            const button = document.getElementById('addButton');
             const text = input.value.trim();
             
             if (!text) return;
             
-            // Handle multiple items separated by commas
-            const itemsToAdd = text.split(',').map(item => item.trim()).filter(item => item);
+            input.disabled = true;
+            button.disabled = true;
+            button.textContent = '⏳';
             
-            itemsToAdd.forEach(itemText => {
-                if (itemText) {
-                    saveItem(itemText);
+            try {
+                const response = await fetch(`${API_BASE_URL}/items/${currentUser.id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    input.value = '';
+                    await loadItems(); // Перезагружаем весь список
+                    showTempMessage('✅ Товар добавлен');
+                } else {
+                    throw new Error(data.error || 'Ошибка добавления');
                 }
-            });
+                
+            } catch (error) {
+                console.error('Ошибка добавления:', error);
+                showError(`❌ Не удалось добавить товар: ${error.message}`);
+            } finally {
+                input.disabled = false;
+                button.disabled = false;
+                button.textContent = '➕';
+                input.focus();
+            }
+        }
+
+        // Переключить статус товара
+        async function toggleItem(itemId) {
+            const itemElement = document.querySelector(`[data-item-id="${itemId}"] .checkbox`);
+            if (!itemElement) return;
             
-            input.value = '';
-            loadItems();
-        }
-
-        // Save item to localStorage
-        function saveItem(text) {
+            itemElement.classList.add('loading');
+            
             try {
-                const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+                const response = await fetch(`${API_BASE_URL}/items/${currentUser.id}/${itemId}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
                 
-                // Check for duplicates
-                if (!items.find(item => item.text.toLowerCase() === text.toLowerCase())) {
-                    items.push({
-                        id: Date.now() + Math.random(),
-                        text: text,
-                        completed: false,
-                        createdAt: new Date().toISOString()
-                    });
-                    
-                    localStorage.setItem('shopping_items', JSON.stringify(items));
-                    return true;
-                }
-                return false;
-            } catch (error) {
-                console.error('Error saving item:', error);
-                return false;
-            }
-        }
-
-        // Toggle item completion
-        function toggleItem(id) {
-            try {
-                const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                const item = items.find(item => item.id === id);
+                const data = await response.json();
                 
-                if (item) {
-                    item.completed = !item.completed;
-                    localStorage.setItem('shopping_items', JSON.stringify(items));
-                    loadItems();
+                if (data.success) {
+                    await loadItems(); // Перезагружаем весь список
+                } else {
+                    throw new Error(data.error || 'Ошибка обновления');
                 }
+                
             } catch (error) {
-                console.error('Error toggling item:', error);
+                console.error('Ошибка переключения:', error);
+                showError(`❌ Не удалось обновить товар: ${error.message}`);
+            } finally {
+                itemElement.classList.remove('loading');
             }
         }
 
-        // Delete item
-        function deleteItem(id) {
+        // Удалить товар
+        async function deleteItem(itemId) {
+            const itemElement = document.querySelector(`[data-item-id="${itemId}"] .delete-btn`);
+            if (!itemElement) return;
+            
+            itemElement.disabled = true;
+            itemElement.textContent = '⏳';
+            
             try {
-                let items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                items = items.filter(item => item.id !== id);
-                localStorage.setItem('shopping_items', JSON.stringify(items));
-                loadItems();
+                const response = await fetch(`${API_BASE_URL}/items/${currentUser.id}/${itemId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    await loadItems(); // Перезагружаем весь список
+                    showTempMessage('🗑️ Товар удален');
+                } else {
+                    throw new Error(data.error || 'Ошибка удаления');
+                }
+                
             } catch (error) {
-                console.error('Error deleting item:', error);
+                console.error('Ошибка удаления:', error);
+                showError(`❌ Не удалось удалить товар: ${error.message}`);
+            } finally {
+                itemElement.disabled = false;
+                itemElement.textContent = '×';
             }
         }
 
-        // Render items to the page
-        function renderItems(items) {
+        // === ИНТЕРФЕЙС ===
+        
+        // Показать/скрыть загрузку
+        function showLoading(show) {
+            document.getElementById('loadingState').style.display = show ? 'block' : 'none';
+            document.getElementById('emptyState').style.display = 'none';
+        }
+
+        // Обновить статус подключения
+        function updateConnectionStatus(status) {
+            const element = document.getElementById('connectionStatus');
+            element.className = `connection-status ${status}`;
+            
+            switch(status) {
+                case 'connected':
+                    element.textContent = '✅ Онлайн';
+                    break;
+                case 'disconnected':
+                    element.textContent = '❌ Офлайн';
+                    break;
+                case 'connecting':
+                    element.textContent = '🔄 Подключение...';
+                    break;
+            }
+        }
+
+        // Показать ошибку
+        function showError(message) {
+            const container = document.getElementById('errorContainer');
+            
+            if (!message) {
+                container.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+            
+            container.style.display = 'block';
+            container.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        // Показать временное сообщение
+        function showTempMessage(message) {
+            const msg = document.createElement('div');
+            msg.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #4CAF50;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 10px;
+                z-index: 1000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            `;
+            msg.textContent = message;
+            document.body.appendChild(msg);
+            
+            setTimeout(() => msg.remove(), 3000);
+        }
+
+        // Отрисовать список
+        function renderItems() {
             const activeItems = items.filter(item => !item.completed);
             const completedItems = items.filter(item => item.completed);
             
-            // Active items
+            // Активные товары
             const activeContainer = document.getElementById('activeItems');
             activeContainer.innerHTML = '';
             activeItems.forEach(item => {
                 activeContainer.appendChild(createItemElement(item));
             });
             
-            // Completed items
+            // Выполненные товары
             const completedContainer = document.getElementById('completedItems');
             completedContainer.innerHTML = '';
             completedItems.forEach(item => {
                 completedContainer.appendChild(createItemElement(item));
             });
             
-            // Show/hide sections
+            // Показать/скрыть секции
             document.getElementById('activeSection').style.display = activeItems.length ? 'block' : 'none';
             document.getElementById('completedSection').style.display = completedItems.length ? 'block' : 'none';
             document.getElementById('emptyState').style.display = items.length ? 'none' : 'block';
+            document.getElementById('loadingState').style.display = 'none';
         }
 
-        // Create item HTML element
+        // Создать элемент товара
         function createItemElement(item) {
             const div = document.createElement('div');
             div.className = 'item';
+            div.setAttribute('data-item-id', item.id);
             
             div.innerHTML = `
                 <div class="item-content">
-                    <div class="checkbox ${item.completed ? 'checked' : ''}" onclick="toggleItem(${item.id})">
+                    <div class="checkbox ${item.completed ? 'checked' : ''}" 
+                         onclick="toggleItem(${item.id})">
                         ${item.completed ? '✓' : ''}
                     </div>
                     <div class="item-text ${item.completed ? 'completed' : ''}">
@@ -465,232 +563,35 @@
             return div;
         }
 
-        // 🔄 SYNCHRONIZATION FUNCTIONS
-
-        // Sync with bot - отправляем данные боту
-        function syncWithBot() {
-            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-            
-            // Проверяем что есть товары для отправки
-            if (items.length === 0) {
-                alert('❌ Список покупок пуст! Добавьте товары перед отправкой.');
-                return;
-            }
-            
-            // Показываем данные для копирования
-            showDataModal();
-        }
-
-        // Показать модальное окно с данными для копирования
-        function showDataModal() {
-            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-            
-            // Форматируем ТОЛЬКО JSON данные (без лишнего текста)
-            const syncData = {
-                action: 'sync_from_webapp',
-                items: items,
-                timestamp: new Date().toISOString(),
-                user_id: tg.initDataUnsafe.user.id
-            };
-            
-            const jsonText = JSON.stringify(syncData, null, 2);
-            
-            const modal = document.createElement('div');
-            modal.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0,0,0,0.8);
-                z-index: 10000;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                padding: 20px;
-            `;
-            
-            modal.innerHTML = `
-                <div style="background: white; padding: 20px; border-radius: 15px; max-width: 500px; max-height: 80vh; overflow-y: auto;">
-                    <h3 style="margin-bottom: 15px; color: #4CAF50;">📤 Отправка данных боту</h3>
-                    <p style="margin-bottom: 10px; font-size: 14px; color: #666;">
-                        Скопируйте этот код и отправьте боту:
-                    </p>
-                    <div style="background: #f5f5f5; padding: 15px; border-radius: 10px; margin-bottom: 15px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
-                        ${jsonText}
-                    </div>
-                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                        <button onclick="closeDataModal()" style="padding: 10px 20px; background: #f0f0f0; border: none; border-radius: 8px; cursor: pointer;">Закрыть</button>
-                        <button onclick="copyToClipboard('${btoa(unescape(encodeURIComponent(jsonText)))}')" style="padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer;">📋 Копировать код</button>
-                    </div>
-                </div>
-            `;
-            
-            modal.id = 'dataModal';
-            document.body.appendChild(modal);
-        }
-
-        // Закрыть модальное окно
-        function closeDataModal() {
-            const modal = document.getElementById('dataModal');
-            if (modal) modal.remove();
-        }
-
-        // Копировать в буфер обмена
-        function copyToClipboard(encodedJson) {
-            try {
-                const jsonText = decodeURIComponent(escape(atob(encodedJson)));
-                
-                navigator.clipboard.writeText(jsonText).then(() => {
-                    alert('✅ Код скопирован! Теперь отправьте его боту.');
-                    closeDataModal();
-                }).catch(err => {
-                    // Fallback для старых браузеров
-                    const textArea = document.createElement('textarea');
-                    textArea.value = jsonText;
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textArea);
-                    alert('✅ Код скопирован! Теперь отправьте его боту.');
-                    closeDataModal();
-                });
-            } catch (error) {
-                console.error('Copy error:', error);
-                alert('❌ Ошибка копирования');
-            }
-        }
-
-        // Показать модальное окно для импорта
-        function showImportModal() {
-            document.getElementById('importModal').style.display = 'flex';
-            document.getElementById('importData').focus();
-        }
-
-        // Скрыть модальное окно
-        function hideImportModal() {
-            document.getElementById('importModal').style.display = 'none';
-            document.getElementById('importData').value = '';
-        }
-
-        // Импорт данных от бота
-        function importFromBot() {
-            const importText = document.getElementById('importData').value.trim();
-            
-            if (!importText) {
-                showSyncMessage('❌ Введите JSON данные');
-                return;
-            }
-            
-            try {
-                const importedData = JSON.parse(importText);
-                
-                // Проверяем что это массив
-                if (!Array.isArray(importedData)) {
-                    throw new Error('Данные должны быть массивом');
-                }
-                
-                // Проверяем структуру данных
-                const validData = importedData.filter(item => 
-                    item && typeof item.text === 'string' && item.text.trim() !== ''
-                );
-                
-                if (validData.length === 0) {
-                    throw new Error('Нет валидных товаров для импорта');
-                }
-                
-                // Очищаем текущий список
-                localStorage.setItem('shopping_items', JSON.stringify([]));
-                
-                // Добавляем импортированные товары
-                let importedCount = 0;
-                let skippedCount = 0;
-                
-                validData.forEach(item => {
-                    if (saveItem(item.text)) {
-                        // Если товар был отмечен как выполненный в импорте
-                        if (item.completed) {
-                            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                            const savedItem = items.find(saved => saved.text === item.text);
-                            if (savedItem) {
-                                savedItem.completed = true;
-                            }
-                            localStorage.setItem('shopping_items', JSON.stringify(items));
-                        }
-                        importedCount++;
-                    } else {
-                        skippedCount++;
-                    }
-                });
-                
-                // Перезагружаем список
-                loadItems();
-                hideImportModal();
-                
-                // Показываем результат
-                let message = `✅ Импортировано товаров: ${importedCount}`;
-                if (skippedCount > 0) {
-                    message += `\n⏭️ Пропущено (дубликаты): ${skippedCount}`;
-                }
-                showSyncMessage(message);
-                
-            } catch (error) {
-                console.error('Import error:', error);
-                showSyncMessage('❌ Ошибка импорта: неверный формат JSON');
-            }
-        }
-
-        // Show sync message
-        function showSyncMessage(message) {
-            const messageDiv = document.createElement('div');
-            messageDiv.style.cssText = `
-                position: fixed;
-                top: 20px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: #4CAF50;
-                color: white;
-                padding: 12px 20px;
-                border-radius: 10px;
-                z-index: 1000;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                max-width: 80%;
-                text-align: center;
-            `;
-            messageDiv.textContent = message;
-            
-            document.body.appendChild(messageDiv);
-            
-            setTimeout(() => {
-                if (messageDiv.parentNode) {
-                    messageDiv.remove();
-                }
-            }, 4000);
-        }
-
-        // Простая проверка
-        function quickDebug() {
-            alert(`Проверка:\n• Telegram WebApp: ${typeof tg}\n• Пользователь: ${tg.initDataUnsafe?.user?.first_name || 'нет'}\n• ID: ${tg.initDataUnsafe?.user?.id || 'нет'}`);
-        }
-
-        // Handle Enter key in input
+        // === ОБРАБОТЧИКИ СОБЫТИЙ ===
+        
+        // Enter в поле ввода
         document.getElementById('itemInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 addItem();
             }
         });
 
-        // Закрытие модального окна по клику вне его
-        document.getElementById('importModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                hideImportModal();
+        // Авто-обновление каждые 30 секунд
+        setInterval(() => {
+            if (isOnline) {
+                loadItems();
             }
+        }, 30000);
+
+        // Проверка подключения при загрузке
+        document.addEventListener('DOMContentLoaded', async function() {
+            isOnline = await checkConnection();
+            await loadItems();
+            
+            // Периодическая проверка подключения
+            setInterval(async () => {
+                isOnline = await checkConnection();
+            }, 10000);
         });
 
-        // Load items when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            loadItems();
-        });
+        // Обновить вручную по клику на статус
+        document.getElementById('connectionStatus').addEventListener('click', loadItems);
     </script>
 </body>
 </html>
