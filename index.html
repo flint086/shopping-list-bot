@@ -56,6 +56,10 @@
             background: #f44336;
         }
         
+        .sync-status.success {
+            background: #4CAF50;
+        }
+        
         .add-item {
             padding: 20px;
             border-bottom: 1px solid #eee;
@@ -282,6 +286,22 @@
             font-size: 11px;
             color: #999;
             margin-top: 5px;
+            padding: 10px;
+        }
+
+        #manualSyncBtn {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #FF9800;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
     </style>
 </head>
@@ -291,7 +311,7 @@
             <h1>🛒 Список покупок</h1>
             <div id="userInfo"></div>
             <div class="sync-buttons">
-                <button class="sync-btn" onclick="syncWithBot()">📤 Боту</button>
+                <button class="sync-btn" onclick="manualSyncWithBot()">📤 Боту</button>
                 <button class="sync-btn load" onclick="showImportModal()">📥 От бота</button>
                 <button class="sync-btn auto" onclick="autoSyncWithBot()">🔄 Автосинх</button>
             </div>
@@ -343,105 +363,269 @@
     </div>
 
     <script>
-        // Telegram Web App initialization
-        let tg = window.Telegram.WebApp;
+        // Конфигурация API
+        const API_URL = 'http://localhost:5000/api/sync';
+        
+        // Глобальные переменные для синхронизации
+        let tg = null;
         let currentUser = null;
         let lastSyncTime = 0;
         let isSyncing = false;
         let autoSyncInterval = null;
 
-        // Initialize Telegram Web App
-        tg.expand();
-        tg.MainButton.setText("Синхронизировать").onClick(autoSyncWithBot);
-        tg.MainButton.show();
+        // Инициализация приложения
+        function initApp() {
+            // Пытаемся получить данные из Telegram WebApp
+            if (window.Telegram && window.Telegram.WebApp) {
+                tg = window.Telegram.WebApp;
+                tg.expand();
+                tg.enableClosingConfirmation();
+                
+                if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                    currentUser = tg.initDataUnsafe.user;
+                    document.getElementById('userInfo').textContent = `Привет, ${currentUser.first_name || 'друг'}!`;
+                } else {
+                    currentUser = { id: 'unknown_user' };
+                    document.getElementById('userInfo').textContent = 'Гость';
+                }
+            } else {
+                // Режим обычного браузера
+                currentUser = { id: getBrowserUserId() };
+                document.getElementById('userInfo').textContent = 'Режим браузера';
+            }
+            
+            setupAutoSync();
+            loadItems();
+        }
 
-        // Show user info if available
-        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-            currentUser = tg.initDataUnsafe.user;
-            document.getElementById('userInfo').textContent = `Привет, ${currentUser.first_name || 'друг'}!`;
+        // Генерация ID для браузерного режима
+        function getBrowserUserId() {
+            let userId = localStorage.getItem('browser_user_id');
+            if (!userId) {
+                userId = 'browser_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('browser_user_id', userId);
+            }
+            return userId;
         }
 
         // Автоматическая синхронизация
-        function setupAutoSync() {
-            // Синхронизируем каждые 30 секунд
-            autoSyncInterval = setInterval(autoSyncWithBot, 30000);
-            
-            // Синхронизируем при загрузке
-            setTimeout(autoSyncWithBot, 2000);
-            
-            // Синхронизируем при изменении данных
-            setupStorageListener();
-        }
-
-        function setupStorageListener() {
-            // Перехватываем изменения в localStorage
-            const originalSetItem = localStorage.setItem;
-            localStorage.setItem = function(key, value) {
-                originalSetItem.apply(this, arguments);
-                if (key === 'shopping_items') {
-                    // Задержка для группировки быстрых изменений
-                    clearTimeout(window.syncTimeout);
-                    window.syncTimeout = setTimeout(() => {
-                        if (!isSyncing) {
-                            autoSyncWithBot();
-                        }
-                    }, 1000);
-                }
-            };
-        }
-
-        // Автоматическая синхронизация с ботом
         async function autoSyncWithBot() {
-            if (isSyncing) return;
+            if (isSyncing || !currentUser) return;
             
             try {
                 isSyncing = true;
                 updateSyncStatus('🔄 Синхронизация...', 'syncing');
                 
-                const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+                // 1. Получаем текущие локальные данные
+                const localItems = JSON.parse(localStorage.getItem('shopping_items') || '[]');
                 
-                // Создаем данные для синхронизации
+                // 2. Отправляем на сервер
                 const syncData = {
-                    action: 'sync_from_webapp',
-                    items: items,
+                    action: 'save_data',
+                    user_id: currentUser.id,
+                    items: localItems,
                     timestamp: new Date().toISOString(),
-                    user_id: tg.initDataUnsafe.user.id,
-                    source: 'webapp_auto'
+                    source: 'webapp'
                 };
                 
-                // Отправляем данные боту через WebApp
-                if (window.Telegram && window.Telegram.WebApp) {
-                    tg.sendData(JSON.stringify(syncData));
+                const response = await fetchWithTimeout(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(syncData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                lastSyncTime = Date.now();
-                updateLastSyncTime();
-                updateSyncStatus('✅ Синхронизировано', '');
+                const result = await response.json();
                 
-                setTimeout(() => {
-                    updateSyncStatus('🔄 Готов к синхронизации', '');
-                }, 2000);
+                if (result.success) {
+                    // 3. После успешной отправки запрашиваем актуальные данные
+                    await pullFromServer();
+                    
+                    lastSyncTime = Date.now();
+                    updateLastSyncTime();
+                    updateSyncStatus('✅ Синхронизировано', 'success');
+                    
+                    setTimeout(() => {
+                        updateSyncStatus('🔄 Готов к синхронизации', '');
+                    }, 2000);
+                } else {
+                    throw new Error(result.error || 'Unknown server error');
+                }
                 
             } catch (error) {
                 console.error('Ошибка синхронизации:', error);
-                updateSyncStatus('❌ Ошибка синхронизации', 'error');
+                
+                if (error.name === 'AbortError') {
+                    updateSyncStatus('❌ Таймаут соединения', 'error');
+                } else {
+                    updateSyncStatus('❌ Ошибка синхронизации', 'error');
+                }
+                
+                showManualSyncButton();
             } finally {
                 isSyncing = false;
             }
         }
 
-        function updateSyncStatus(message, className = '') {
-            const statusElement = document.getElementById('syncStatus');
-            statusElement.textContent = message;
-            statusElement.className = 'sync-status ' + className;
+        // Функция для ручной синхронизации
+        function manualSyncWithBot() {
+            showDataModal();
         }
 
+        // Загрузка данных с сервера
+        async function pullFromServer() {
+            if (!currentUser) return;
+            
+            try {
+                const response = await fetchWithTimeout(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'get_data',
+                        user_id: currentUser.id
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success && result.items) {
+                    // Объединяем локальные и серверные данные
+                    const localItems = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+                    const mergedItems = mergeItems(localItems, result.items);
+                    
+                    // Сохраняем объединенные данные
+                    localStorage.setItem('shopping_items', JSON.stringify(mergedItems));
+                    loadItems();
+                    
+                    console.log('Данные получены с сервера:', mergedItems.length, 'товаров');
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки с сервера:', error);
+            }
+        }
+
+        // Умное объединение данных
+        function mergeItems(localItems, serverItems) {
+            const merged = [];
+            const seen = new Set();
+            
+            // Сначала добавляем серверные данные (более актуальные)
+            serverItems.forEach(item => {
+                const key = item.text.toLowerCase() + '_' + item.completed;
+                if (!seen.has(key)) {
+                    merged.push(item);
+                    seen.add(key);
+                }
+            });
+            
+            // Затем добавляем локальные данные, которых нет на сервере
+            localItems.forEach(item => {
+                const key = item.text.toLowerCase() + '_' + item.completed;
+                if (!seen.has(key)) {
+                    merged.push(item);
+                    seen.add(key);
+                }
+            });
+            
+            return merged;
+        }
+
+        // Настройка автоматической синхронизации
+        function setupAutoSync() {
+            // Синхронизируем каждые 30 секунд
+            autoSyncInterval = setInterval(autoSyncWithBot, 30000);
+            
+            // Первую синхронизацию делаем через 2 секунды после загрузки
+            setTimeout(() => {
+                pullFromServer();
+                autoSyncWithBot();
+            }, 2000);
+            
+            setupStorageListener();
+        }
+
+        // Слушатель изменений в localStorage
+        function setupStorageListener() {
+            const originalSetItem = localStorage.setItem;
+            localStorage.setItem = function(key, value) {
+                originalSetItem.apply(this, arguments);
+                if (key === 'shopping_items') {
+                    clearTimeout(window.syncTimeout);
+                    window.syncTimeout = setTimeout(() => {
+                        if (!isSyncing) {
+                            autoSyncWithBot();
+                        }
+                    }, 2000);
+                }
+            };
+        }
+
+        // Fetch с таймаутом
+        async function fetchWithTimeout(resource, options = {}) {
+            const { timeout = 8000 } = options;
+            
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+            
+            const response = await fetch(resource, {
+                ...options,
+                signal: controller.signal  
+            });
+            
+            clearTimeout(id);
+            return response;
+        }
+
+        // Обновление статуса синхронизации
+        function updateSyncStatus(message, className = '') {
+            const statusElement = document.getElementById('syncStatus');
+            if (statusElement) {
+                statusElement.textContent = message;
+                statusElement.className = 'sync-status ' + className;
+            }
+        }
+
+        // Обновление времени последней синхронизации
         function updateLastSyncTime() {
             const lastSyncElement = document.getElementById('lastSync');
             if (lastSyncTime > 0) {
                 const time = new Date(lastSyncTime);
                 lastSyncElement.textContent = `Последняя синхронизация: ${time.toLocaleTimeString()}`;
             }
+        }
+
+        // Кнопка для ручной синхронизации при ошибках
+        function showManualSyncButton() {
+            const existingBtn = document.getElementById('manualSyncBtn');
+            if (existingBtn) return;
+            
+            const manualBtn = document.createElement('button');
+            manualBtn.id = 'manualSyncBtn';
+            manualBtn.textContent = '🔄 Повторить синхронизацию';
+            manualBtn.onclick = function() {
+                this.remove();
+                autoSyncWithBot();
+            };
+            
+            document.body.appendChild(manualBtn);
+            
+            // Автоматически убираем через 10 секунд
+            setTimeout(() => {
+                if (manualBtn.parentNode) {
+                    manualBtn.remove();
+                }
+            }, 10000);
         }
 
         // Load items from localStorage
@@ -461,7 +645,6 @@
             
             if (!text) return;
             
-            // Handle multiple items separated by commas
             const itemsToAdd = text.split(',').map(item => item.trim()).filter(item => item);
             
             itemsToAdd.forEach(itemText => {
@@ -473,7 +656,7 @@
             input.value = '';
             loadItems();
             
-            // Автосинхронизация после добавления
+            // Синхронизация после добавления
             setTimeout(autoSyncWithBot, 500);
         }
 
@@ -512,7 +695,7 @@
                     localStorage.setItem('shopping_items', JSON.stringify(items));
                     loadItems();
                     
-                    // Автосинхронизация после изменения
+                    // Синхронизация после изменения
                     setTimeout(autoSyncWithBot, 500);
                 }
             } catch (error) {
@@ -528,7 +711,7 @@
                 localStorage.setItem('shopping_items', JSON.stringify(items));
                 loadItems();
                 
-                // Автосинхронизация после удаления
+                // Синхронизация после удаления
                 setTimeout(autoSyncWithBot, 500);
             } catch (error) {
                 console.error('Error deleting item:', error);
@@ -580,19 +763,7 @@
             return div;
         }
 
-        // 🔄 SYNCHRONIZATION FUNCTIONS
-
-        // Sync with bot - отправляем данные боту
-        function syncWithBot() {
-            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-            
-            if (items.length === 0) {
-                alert('❌ Список покупок пуст! Добавьте товары перед отправкой.');
-                return;
-            }
-            
-            showDataModal();
-        }
+        // 🔄 SYNCHRONIZATION MODAL FUNCTIONS
 
         // Показать модальное окно с данными для копирования
         function showDataModal() {
@@ -602,7 +773,7 @@
                 action: 'sync_from_webapp',
                 items: items,
                 timestamp: new Date().toISOString(),
-                user_id: tg.initDataUnsafe.user.id,
+                user_id: currentUser.id,
                 source: 'webapp_manual'
             };
             
@@ -771,10 +942,7 @@
         });
 
         // Load items when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            loadItems();
-            setupAutoSync();
-        });
+        document.addEventListener('DOMContentLoaded', initApp);
     </script>
 </body>
 </html>
