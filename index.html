@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Список покупок - Синхронизация</title>
+    <title>Список покупок</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
@@ -38,26 +38,6 @@
         .header h1 {
             font-size: 24px;
             margin-bottom: 5px;
-        }
-        
-        .sync-status {
-            background: #2196F3;
-            padding: 10px;
-            text-align: center;
-            color: white;
-            font-size: 12px;
-        }
-        
-        .sync-status.syncing {
-            background: #FF9800;
-        }
-        
-        .sync-status.error {
-            background: #f44336;
-        }
-        
-        .sync-status.success {
-            background: #4CAF50;
         }
         
         .add-item {
@@ -183,7 +163,6 @@
             gap: 10px;
             margin-top: 10px;
             justify-content: center;
-            flex-wrap: wrap;
         }
         
         .sync-btn {
@@ -198,10 +177,6 @@
         
         .sync-btn.load {
             background: #FF9800;
-        }
-        
-        .sync-btn.auto {
-            background: #4CAF50;
         }
         
         .modal {
@@ -281,27 +256,18 @@
             color: #666;
         }
 
-        .last-sync {
-            text-align: center;
-            font-size: 11px;
-            color: #999;
-            margin-top: 5px;
-            padding: 10px;
-        }
-
-        #manualSyncBtn {
+        .debug-btn {
             position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #FF9800;
+            bottom: 10px;
+            right: 10px;
+            background: #2196F3;
             color: white;
             border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
+            padding: 8px 12px;
+            border-radius: 5px;
             cursor: pointer;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 9999;
+            font-size: 12px;
         }
     </style>
 </head>
@@ -311,14 +277,9 @@
             <h1>🛒 Список покупок</h1>
             <div id="userInfo"></div>
             <div class="sync-buttons">
-                <button class="sync-btn" onclick="manualSyncWithBot()">📤 Боту</button>
-                <button class="sync-btn load" onclick="showImportModal()">📥 От бота</button>
-                <button class="sync-btn auto" onclick="autoSyncWithBot()">🔄 Автосинх</button>
+                <button class="sync-btn" onclick="syncWithBot()">📤 Отправить боту</button>
+                <button class="sync-btn load" onclick="showImportModal()">📥 Загрузить от бота</button>
             </div>
-        </div>
-        
-        <div class="sync-status" id="syncStatus">
-            🔄 Синхронизация: Ожидание...
         </div>
         
         <div class="add-item">
@@ -343,10 +304,6 @@
             📝 Список покупок пуст<br>
             <small>Добавьте первый товар</small>
         </div>
-        
-        <div class="last-sync" id="lastSync">
-            Последняя синхронизация: никогда
-        </div>
     </div>
 
     <!-- Модальное окно для импорта -->
@@ -354,7 +311,7 @@
         <div class="modal-content">
             <h3>📥 Импорт данных от бота</h3>
             <p>Вставьте JSON код, полученный от бота:</p>
-            <textarea id="importData" placeholder='Вставьте сюда JSON код...'></textarea>
+            <textarea id="importData" placeholder='Вставьте сюда JSON код...&#10;Пример:&#10;[&#10;  {&#10;    "id": 1,&#10;    "text": "Молоко",&#10;    "completed": false&#10;  }&#10;]'></textarea>
             <div class="modal-buttons">
                 <button class="modal-btn secondary" onclick="hideImportModal()">Отмена</button>
                 <button class="modal-btn primary" onclick="importFromBot()">Импортировать</button>
@@ -362,270 +319,23 @@
         </div>
     </div>
 
+    <!-- Кнопка отладки -->
+    <button class="debug-btn" onclick="quickDebug()">🚨 Проверка</button>
+
     <script>
-        // Конфигурация API
-        const API_URL = 'http://localhost:5000/api/sync';
-        
-        // Глобальные переменные для синхронизации
-        let tg = null;
+        // Telegram Web App initialization
+        let tg = window.Telegram.WebApp;
         let currentUser = null;
-        let lastSyncTime = 0;
-        let isSyncing = false;
-        let autoSyncInterval = null;
 
-        // Инициализация приложения
-        function initApp() {
-            // Пытаемся получить данные из Telegram WebApp
-            if (window.Telegram && window.Telegram.WebApp) {
-                tg = window.Telegram.WebApp;
-                tg.expand();
-                tg.enableClosingConfirmation();
-                
-                if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                    currentUser = tg.initDataUnsafe.user;
-                    document.getElementById('userInfo').textContent = `Привет, ${currentUser.first_name || 'друг'}!`;
-                } else {
-                    currentUser = { id: 'unknown_user' };
-                    document.getElementById('userInfo').textContent = 'Гость';
-                }
-            } else {
-                // Режим обычного браузера
-                currentUser = { id: getBrowserUserId() };
-                document.getElementById('userInfo').textContent = 'Режим браузера';
-            }
-            
-            setupAutoSync();
-            loadItems();
-        }
+        // Initialize Telegram Web App
+        tg.expand();
+        tg.MainButton.setText("Синхронизировать с ботом").onClick(syncWithBot);
+        tg.MainButton.show();
 
-        // Генерация ID для браузерного режима
-        function getBrowserUserId() {
-            let userId = localStorage.getItem('browser_user_id');
-            if (!userId) {
-                userId = 'browser_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('browser_user_id', userId);
-            }
-            return userId;
-        }
-
-        // Автоматическая синхронизация
-        async function autoSyncWithBot() {
-            if (isSyncing || !currentUser) return;
-            
-            try {
-                isSyncing = true;
-                updateSyncStatus('🔄 Синхронизация...', 'syncing');
-                
-                // 1. Получаем текущие локальные данные
-                const localItems = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                
-                // 2. Отправляем на сервер
-                const syncData = {
-                    action: 'save_data',
-                    user_id: currentUser.id,
-                    items: localItems,
-                    timestamp: new Date().toISOString(),
-                    source: 'webapp'
-                };
-                
-                const response = await fetchWithTimeout(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(syncData)
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    // 3. После успешной отправки запрашиваем актуальные данные
-                    await pullFromServer();
-                    
-                    lastSyncTime = Date.now();
-                    updateLastSyncTime();
-                    updateSyncStatus('✅ Синхронизировано', 'success');
-                    
-                    setTimeout(() => {
-                        updateSyncStatus('🔄 Готов к синхронизации', '');
-                    }, 2000);
-                } else {
-                    throw new Error(result.error || 'Unknown server error');
-                }
-                
-            } catch (error) {
-                console.error('Ошибка синхронизации:', error);
-                
-                if (error.name === 'AbortError') {
-                    updateSyncStatus('❌ Таймаут соединения', 'error');
-                } else {
-                    updateSyncStatus('❌ Ошибка синхронизации', 'error');
-                }
-                
-                showManualSyncButton();
-            } finally {
-                isSyncing = false;
-            }
-        }
-
-        // Функция для ручной синхронизации
-        function manualSyncWithBot() {
-            showDataModal();
-        }
-
-        // Загрузка данных с сервера
-        async function pullFromServer() {
-            if (!currentUser) return;
-            
-            try {
-                const response = await fetchWithTimeout(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'get_data',
-                        user_id: currentUser.id
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const result = await response.json();
-                
-                if (result.success && result.items) {
-                    // Объединяем локальные и серверные данные
-                    const localItems = JSON.parse(localStorage.getItem('shopping_items') || '[]');
-                    const mergedItems = mergeItems(localItems, result.items);
-                    
-                    // Сохраняем объединенные данные
-                    localStorage.setItem('shopping_items', JSON.stringify(mergedItems));
-                    loadItems();
-                    
-                    console.log('Данные получены с сервера:', mergedItems.length, 'товаров');
-                }
-            } catch (error) {
-                console.error('Ошибка загрузки с сервера:', error);
-            }
-        }
-
-        // Умное объединение данных
-        function mergeItems(localItems, serverItems) {
-            const merged = [];
-            const seen = new Set();
-            
-            // Сначала добавляем серверные данные (более актуальные)
-            serverItems.forEach(item => {
-                const key = item.text.toLowerCase() + '_' + item.completed;
-                if (!seen.has(key)) {
-                    merged.push(item);
-                    seen.add(key);
-                }
-            });
-            
-            // Затем добавляем локальные данные, которых нет на сервере
-            localItems.forEach(item => {
-                const key = item.text.toLowerCase() + '_' + item.completed;
-                if (!seen.has(key)) {
-                    merged.push(item);
-                    seen.add(key);
-                }
-            });
-            
-            return merged;
-        }
-
-        // Настройка автоматической синхронизации
-        function setupAutoSync() {
-            // Синхронизируем каждые 30 секунд
-            autoSyncInterval = setInterval(autoSyncWithBot, 30000);
-            
-            // Первую синхронизацию делаем через 2 секунды после загрузки
-            setTimeout(() => {
-                pullFromServer();
-                autoSyncWithBot();
-            }, 2000);
-            
-            setupStorageListener();
-        }
-
-        // Слушатель изменений в localStorage
-        function setupStorageListener() {
-            const originalSetItem = localStorage.setItem;
-            localStorage.setItem = function(key, value) {
-                originalSetItem.apply(this, arguments);
-                if (key === 'shopping_items') {
-                    clearTimeout(window.syncTimeout);
-                    window.syncTimeout = setTimeout(() => {
-                        if (!isSyncing) {
-                            autoSyncWithBot();
-                        }
-                    }, 2000);
-                }
-            };
-        }
-
-        // Fetch с таймаутом
-        async function fetchWithTimeout(resource, options = {}) {
-            const { timeout = 8000 } = options;
-            
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), timeout);
-            
-            const response = await fetch(resource, {
-                ...options,
-                signal: controller.signal  
-            });
-            
-            clearTimeout(id);
-            return response;
-        }
-
-        // Обновление статуса синхронизации
-        function updateSyncStatus(message, className = '') {
-            const statusElement = document.getElementById('syncStatus');
-            if (statusElement) {
-                statusElement.textContent = message;
-                statusElement.className = 'sync-status ' + className;
-            }
-        }
-
-        // Обновление времени последней синхронизации
-        function updateLastSyncTime() {
-            const lastSyncElement = document.getElementById('lastSync');
-            if (lastSyncTime > 0) {
-                const time = new Date(lastSyncTime);
-                lastSyncElement.textContent = `Последняя синхронизация: ${time.toLocaleTimeString()}`;
-            }
-        }
-
-        // Кнопка для ручной синхронизации при ошибках
-        function showManualSyncButton() {
-            const existingBtn = document.getElementById('manualSyncBtn');
-            if (existingBtn) return;
-            
-            const manualBtn = document.createElement('button');
-            manualBtn.id = 'manualSyncBtn';
-            manualBtn.textContent = '🔄 Повторить синхронизацию';
-            manualBtn.onclick = function() {
-                this.remove();
-                autoSyncWithBot();
-            };
-            
-            document.body.appendChild(manualBtn);
-            
-            // Автоматически убираем через 10 секунд
-            setTimeout(() => {
-                if (manualBtn.parentNode) {
-                    manualBtn.remove();
-                }
-            }, 10000);
+        // Show user info if available
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            currentUser = tg.initDataUnsafe.user;
+            document.getElementById('userInfo').textContent = `Привет, ${currentUser.first_name || 'друг'}!`;
         }
 
         // Load items from localStorage
@@ -645,6 +355,7 @@
             
             if (!text) return;
             
+            // Handle multiple items separated by commas
             const itemsToAdd = text.split(',').map(item => item.trim()).filter(item => item);
             
             itemsToAdd.forEach(itemText => {
@@ -655,9 +366,6 @@
             
             input.value = '';
             loadItems();
-            
-            // Синхронизация после добавления
-            setTimeout(autoSyncWithBot, 500);
         }
 
         // Save item to localStorage
@@ -694,9 +402,6 @@
                     item.completed = !item.completed;
                     localStorage.setItem('shopping_items', JSON.stringify(items));
                     loadItems();
-                    
-                    // Синхронизация после изменения
-                    setTimeout(autoSyncWithBot, 500);
                 }
             } catch (error) {
                 console.error('Error toggling item:', error);
@@ -710,9 +415,6 @@
                 items = items.filter(item => item.id !== id);
                 localStorage.setItem('shopping_items', JSON.stringify(items));
                 loadItems();
-                
-                // Синхронизация после удаления
-                setTimeout(autoSyncWithBot, 500);
             } catch (error) {
                 console.error('Error deleting item:', error);
             }
@@ -763,18 +465,32 @@
             return div;
         }
 
-        // 🔄 SYNCHRONIZATION MODAL FUNCTIONS
+        // 🔄 SYNCHRONIZATION FUNCTIONS
+
+        // Sync with bot - отправляем данные боту
+        function syncWithBot() {
+            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+            
+            // Проверяем что есть товары для отправки
+            if (items.length === 0) {
+                alert('❌ Список покупок пуст! Добавьте товары перед отправкой.');
+                return;
+            }
+            
+            // Показываем данные для копирования
+            showDataModal();
+        }
 
         // Показать модальное окно с данными для копирования
         function showDataModal() {
             const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
             
+            // Форматируем ТОЛЬКО JSON данные (без лишнего текста)
             const syncData = {
                 action: 'sync_from_webapp',
                 items: items,
                 timestamp: new Date().toISOString(),
-                user_id: currentUser.id,
-                source: 'webapp_manual'
+                user_id: tg.initDataUnsafe.user.id
             };
             
             const jsonText = JSON.stringify(syncData, null, 2);
@@ -869,10 +585,12 @@
             try {
                 const importedData = JSON.parse(importText);
                 
+                // Проверяем что это массив
                 if (!Array.isArray(importedData)) {
                     throw new Error('Данные должны быть массивом');
                 }
                 
+                // Проверяем структуру данных
                 const validData = importedData.filter(item => 
                     item && typeof item.text === 'string' && item.text.trim() !== ''
                 );
@@ -881,17 +599,40 @@
                     throw new Error('Нет валидных товаров для импорта');
                 }
                 
-                // Сохраняем импортированные данные
-                localStorage.setItem('shopping_items', JSON.stringify(validData));
+                // Очищаем текущий список
+                localStorage.setItem('shopping_items', JSON.stringify([]));
+                
+                // Добавляем импортированные товары
+                let importedCount = 0;
+                let skippedCount = 0;
+                
+                validData.forEach(item => {
+                    if (saveItem(item.text)) {
+                        // Если товар был отмечен как выполненный в импорте
+                        if (item.completed) {
+                            const items = JSON.parse(localStorage.getItem('shopping_items') || '[]');
+                            const savedItem = items.find(saved => saved.text === item.text);
+                            if (savedItem) {
+                                savedItem.completed = true;
+                            }
+                            localStorage.setItem('shopping_items', JSON.stringify(items));
+                        }
+                        importedCount++;
+                    } else {
+                        skippedCount++;
+                    }
+                });
                 
                 // Перезагружаем список
                 loadItems();
                 hideImportModal();
                 
-                showSyncMessage(`✅ Импортировано товаров: ${validData.length}`);
-                
-                // Синхронизируем с другими клиентами
-                setTimeout(autoSyncWithBot, 1000);
+                // Показываем результат
+                let message = `✅ Импортировано товаров: ${importedCount}`;
+                if (skippedCount > 0) {
+                    message += `\n⏭️ Пропущено (дубликаты): ${skippedCount}`;
+                }
+                showSyncMessage(message);
                 
             } catch (error) {
                 console.error('Import error:', error);
@@ -927,6 +668,11 @@
             }, 4000);
         }
 
+        // Простая проверка
+        function quickDebug() {
+            alert(`Проверка:\n• Telegram WebApp: ${typeof tg}\n• Пользователь: ${tg.initDataUnsafe?.user?.first_name || 'нет'}\n• ID: ${tg.initDataUnsafe?.user?.id || 'нет'}`);
+        }
+
         // Handle Enter key in input
         document.getElementById('itemInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
@@ -942,7 +688,9 @@
         });
 
         // Load items when page loads
-        document.addEventListener('DOMContentLoaded', initApp);
+        document.addEventListener('DOMContentLoaded', function() {
+            loadItems();
+        });
     </script>
 </body>
 </html>
